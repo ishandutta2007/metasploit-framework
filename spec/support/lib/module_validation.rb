@@ -55,6 +55,7 @@ module ModuleValidation
       Msf::CONFIG_CHANGES,
       Msf::IOC_IN_LOGS,
       Msf::ACCOUNT_LOCKOUTS,
+      Msf::ACCOUNT_LOGOUT,
       Msf::SCREEN_EFFECTS,
       Msf::AUDIO_EFFECTS,
       Msf::PHYSICAL_EFFECTS
@@ -66,7 +67,8 @@ module ModuleValidation
     VALID_RELIABILITY_VALUES = [
       Msf::FIRST_ATTEMPT_FAIL,
       Msf::REPEATABLE_SESSION,
-      Msf::UNRELIABLE_SESSION
+      Msf::UNRELIABLE_SESSION,
+      Msf::EVENT_DEPENDENT
     ]
 
     #

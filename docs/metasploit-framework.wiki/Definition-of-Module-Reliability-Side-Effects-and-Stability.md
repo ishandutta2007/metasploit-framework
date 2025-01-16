@@ -59,6 +59,7 @@ Example:
 | CONFIG_CHANGES | Module modifies some config file |
 | IOC_IN_LOGS | Module leaves an indicator of compromise in the log(s) |
 | ACCOUNT_LOCKOUTS | Module may cause an account to lock out |
+| ACCOUNT_LOGOUT | Module may cause an existing valid session to be forced to log out (likely due to restrictions on concurrent sessions)|
 | SCREEN_EFFECTS | Module shows something on the screen that a human may notice |
 | PHYSICAL_EFFECTS | Module may produce physical effects in hardware (Examples: light, sound, or heat) |
 | AUDIO_EFFECTS | Module may cause a noise (Examples: Audio output from the speakers or hardware beeps) |
@@ -70,3 +71,4 @@ Example:
 | FIRST_ATTEMPT_FAIL | The module may fail for the first attempt |
 | REPEATABLE_SESSION | The module is expected to get a session every time it runs |
 | UNRELIABLE_SESSION | The module isn't expected to get a shell reliably (such as only once) |
+| EVENT_DEPENDENT    | The module may not execute the payload until an external event occurs. For instance, a cron job, machine restart, user interaction within a GUI element, etc |

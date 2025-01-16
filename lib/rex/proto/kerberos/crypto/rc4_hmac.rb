@@ -25,7 +25,7 @@ module Rex
             unicode_password = password.encode('utf-16le')
             password_digest = OpenSSL::Digest.digest('MD4', unicode_password)
           end
-          
+
           # Use this class's encryption routines to create a checksum of the data based on the key and message type
           #
           # @param key [String] the key to use to generate the checksum
@@ -87,7 +87,7 @@ module Rex
           def encrypt(plaintext, key, msg_type, confounder: nil)
             k1 = OpenSSL::HMAC.digest('MD5', key, usage_str(msg_type))
 
-            confounder = Rex::Text::rand_text(CONFOUNDER_SIZE) if confounder == nil
+            confounder = Random.urandom(CONFOUNDER_SIZE) if confounder == nil
             data_encrypt = confounder + plaintext
 
             checksum = OpenSSL::HMAC.digest('MD5', k1, data_encrypt)
@@ -103,9 +103,9 @@ module Rex
             res
           end
 
-          def gss_unwrap(ciphertext, key, expected_sequence_number, is_initiator, use_acceptor_subkey: true)
+          def gss_unwrap(ciphertext, key, expected_sequence_number, is_initiator, opts={})
             # Always 32-bit sequence number
-            expected_sequence_number &= 0xFFFFFFFF
+            expected_sequence_number &= 0xFFFFFFFF unless expected_sequence_number.nil?
 
             mech_id, ciphertext = unwrap_pseudo_asn1(ciphertext)
 
@@ -133,7 +133,7 @@ module Rex
             decrypted_sequence_num = cipher_seq.update(encrypted_sequence_num)
             decrypted_sequence_num = decrypted_sequence_num.unpack('N')[0]
 
-            raise Rex::Proto::Kerberos::Model::Error::KerberosError, 'Invalid sequence number' unless decrypted_sequence_num == expected_sequence_number
+            #raise Rex::Proto::Kerberos::Model::Error::KerberosError, 'Invalid sequence number' unless (decrypted_sequence_num == expected_sequence_number || expected_sequence_number.nil?)
 
             klocal = xor_strings(key.value, "\xF0"*16)
             kcrypt = OpenSSL::HMAC.digest('MD5', klocal, [0].pack('V'))
@@ -157,15 +157,19 @@ module Rex
             raise Rex::Proto::Kerberos::Model::Error::KerberosError, 'Checksum error' unless verification_eight_checksum_bytes == eight_checksum_bytes
 
             # Remove padding, if present (seems MS may not send it back?)
-            pad_char = plaintext[-1]
-            if pad_char == "\x01"
-              plaintext = plaintext[0, plaintext.length-1]
+            pad_char = plaintext[-1].ord
+            if 1 <= pad_char && pad_char <= 8
+              plaintext = plaintext[0, plaintext.length-pad_char]
             end
 
             plaintext
           end
 
-          def gss_wrap(plaintext, key, sequence_number, is_initiator, use_acceptor_subkey: true)
+          # @option options [Boolean] :dce_style Whether the interaction is a 3-leg DCERPC interaction
+          # @option options [Symbol] :rc4_pad_style How to do padding - either :single_byte or :eight_byte_aligned
+          def gss_wrap(plaintext, key, sequence_number, is_initiator, opts={})
+            dce_style = opts.fetch(:dce_style) { false }
+            pad_style = opts.fetch(:rc4_pad_style) { :single_byte }
             # Always 32-bit sequence number
             sequence_number &= 0xFFFFFFFF
 
@@ -175,8 +179,22 @@ module Rex
             seal_alg = 0x1000
             filler = 0xFFFF
             header = [tok_id, alg, seal_alg, filler].pack('nnnn')
-            # Add a byte of padding (see RFC1964 section 1.2.2.3) 
-            plaintext += "\x01"
+
+            # Add padding (see RFC1964 section 1.2.2.3)
+            # Some protocols (LDAP) only support a single byte and seem to fail otherwise
+            # Others (DRSR) only support 8-byte and seem to fail otherwise
+            # Some (WinRM) are lenient and are fine with either
+            #
+            # It's not entirely clear why
+            if pad_style == :single_byte
+              pad_num = 1
+            elsif pad_style == :eight_byte_aligned
+              pad_num = (8 - (plaintext.length % 8))
+            else
+              raise ArgumentError.new('Unknown pad_style setting')
+            end
+
+            plaintext += (pad_num.chr * pad_num)
 
             send_seq = [sequence_number].pack('N')
             # See errata on RFC4757
@@ -184,8 +202,7 @@ module Rex
             initiator_bytes = "\x00" * 4 if is_initiator
             send_seq += initiator_bytes
 
-            confounder = Rex::Text::rand_text(CONFOUNDER_SIZE)
-            #confounder = ['cd85a6ad14bcf4a4'].pack('H*')
+            confounder = Random.urandom(CONFOUNDER_SIZE)
             chksum_input = usage_str(Rex::Proto::Kerberos::Crypto::KeyUsage::KRB_PRIV_ENCPART) + header + confounder
             ksign = OpenSSL::HMAC.digest('MD5', key.value, "signaturekey\x00")
             sgn_cksum = Rex::Text.md5_raw(chksum_input+plaintext)
@@ -219,14 +236,21 @@ module Rex
             token = header + encrypted_sequence_num + eight_checksum_bytes + encrypted_confounder
             size_prior = (token+encrypted).length
 
-            wrapped_token = wrap_pseudo_asn1(
-                ::Rex::Proto::Gss::OID_KERBEROS_5,
-                token + encrypted
-            )
+            if dce_style
+              wrapped_token = wrap_pseudo_asn1(
+                  ::Rex::Proto::Gss::OID_KERBEROS_5,
+                  token
+              ) + encrypted
+            else
+              wrapped_token = wrap_pseudo_asn1(
+                  ::Rex::Proto::Gss::OID_KERBEROS_5,
+                  token + encrypted
+              )
+            end
             asn1_length = wrapped_token.length - size_prior
             token_length = asn1_length + token.length
 
-            [wrapped_token, token_length, 0x01]
+            [wrapped_token, token_length, pad_num]
           end
 
           #
@@ -243,11 +267,16 @@ module Rex
             0
           end
 
+          def calculate_encrypted_length(plaintext_len)
+            # We add 1-8 bytes of padding, per RFC1964 section 1.2.2.3
+            plaintext_len + (8 - (plaintext_len % 8))
+          end
+
           private
 
           def usage_str(msg_type)
             usage_table = {
-              Rex::Proto::Kerberos::Crypto::KeyUsage::AS_REP_ENCPART => Rex::Proto::Kerberos::Crypto::KeyUsage::TGS_REP_ENCPART_SESSION_KEY, 
+              Rex::Proto::Kerberos::Crypto::KeyUsage::AS_REP_ENCPART => Rex::Proto::Kerberos::Crypto::KeyUsage::TGS_REP_ENCPART_SESSION_KEY,
               Rex::Proto::Kerberos::Crypto::KeyUsage::GSS_ACCEPTOR_SIGN => Rex::Proto::Kerberos::Crypto::KeyUsage::KRB_PRIV_ENCPART
             }
             usage_mapped = usage_table.fetch(msg_type) { msg_type }

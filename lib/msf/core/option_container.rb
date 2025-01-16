@@ -9,9 +9,11 @@ module Msf
   autoload :OptAddress, 'msf/core/opt_address'
   autoload :OptAddressLocal, 'msf/core/opt_address_local'
   autoload :OptAddressRange, 'msf/core/opt_address_range'
+  autoload :OptAddressRoot, 'msf/core/opt_address_routable'
   autoload :OptBool, 'msf/core/opt_bool'
   autoload :OptEnum, 'msf/core/opt_enum'
   autoload :OptInt, 'msf/core/opt_int'
+  autoload :OptIntRange, 'msf/core/opt_int_range'
   autoload :OptFloat, 'msf/core/opt_float'
   autoload :OptPath, 'msf/core/opt_path'
   autoload :OptPort, 'msf/core/opt_port'
@@ -49,6 +51,7 @@ module Msf
     #
     def initialize(opts = {})
       self.sorted = []
+      self.groups = {}
 
       add_options(opts)
     end
@@ -217,10 +220,15 @@ module Msf
         rhosts_walker = Msf::RhostsWalker.new(datastore['RHOSTS'], datastore)
         rhosts_count = rhosts_walker.count
         unless rhosts_walker.valid?
-          invalid_values = rhosts_walker.to_enum(:errors).take(5).map(&:value)
+          errors = rhosts_walker.to_enum(:errors).to_a
+          grouped = errors.group_by { |err| err.cause.nil? ? nil : (err.cause.class.const_defined?(:MESSAGE) ? err.cause.class::MESSAGE : nil) }
           error_options << 'RHOSTS'
-          if invalid_values.any?
-            error_reasons['RHOSTS'] << "unexpected values: #{invalid_values.join(', ')}"
+          if grouped.any?
+            grouped.each do | message, error_subset |
+              invalid_values = error_subset.map(&:value).take(5)
+              message = 'Unexpected values' if message.nil?
+              error_reasons['RHOSTS'] << "#{message}: #{invalid_values.join(', ')}"
+            end
           end
         end
 
@@ -308,14 +316,33 @@ module Msf
       result.sort
     end
 
+    # Adds an option group to the container
+    #
+    # @param option_group [Msf::OptionGroup]
+    def add_group(option_group)
+      groups[option_group.name] = option_group
+    end
+
+    # Removes an option group from the container by name
+    #
+    # @param group_name [String]
+    def remove_group(group_name)
+      groups.delete(group_name)
+    end
+
     #
     # The sorted array of options.
     #
     attr_reader :sorted
 
+    # @return [Hash<String, Msf::OptionGroup>]
+    attr_reader :groups
+
     protected
 
     attr_writer :sorted # :nodoc:
+
+    attr_writer :groups
   end
 
 end

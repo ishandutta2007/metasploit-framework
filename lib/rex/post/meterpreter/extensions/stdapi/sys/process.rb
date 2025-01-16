@@ -54,7 +54,7 @@ class Process < Rex::Post::Process
   end
 
   #
-  # Attachs to the supplied process with a given set of permissions.
+  # Attaches to the supplied process with a given set of permissions.
   #
   def Process.open(pid = nil, perms = nil)
     real_perms = 0
@@ -107,15 +107,24 @@ class Process < Rex::Post::Process
 
   #
   # Executes an application using the arguments provided
+  # @param path [String] Path on the remote system to the executable to run
+  # @param arguments [String,Array<String>] Arguments to the process. When passed as a String (rather than an array of Strings),
+  #                                         this is treated as a string containing all arguments.
+  # @param opts [Hash] Optional settings to parameterise the process launch
+  # @option Hidden [Boolean] Is the process launched without creating a visible window
+  # @option Channelized [Boolean] The process is launched with pipes connected to a channel, e.g. for sending input/receiving output
+  # @option Suspended [Boolean] Start the process suspended
+  # @option UseThreadToken [Boolean] Use the thread token (as opposed to the process token) to launch the process
+  # @option Desktop [Boolean] Run on meterpreter's current desktopt
+  # @option Session [Integer] Execute process in a given session as the session user
+  # @option Subshell [Boolean] Execute process in a subshell
+  # @option Pty [Boolean] Execute process in a pty (if available)
+  # @option ParentId [Integer] Spoof the parent PID (if possible)
+  # @option InMemory [Boolean,String] Execute from memory (`path` is treated as a local file to upload, and the actual path passed
+  #                                   to meterpreter is this parameter's value, if provided as a String)
+  # @option :legacy_args [String] When arguments is an array, this is the command to execute if the receiving Meterpreter does not support arguments as an array
   #
-  # Hash arguments supported:
-  #
-  #   Hidden      => true/false
-  #   Channelized => true/false
-  #   Suspended   => true/false
-  #   InMemory    => true/false
-  #
-  def Process.execute(path, arguments = nil, opts = nil)
+  def Process.execute(path, arguments = '', opts = nil)
     request = Packet.create_request(COMMAND_ID_STDAPI_SYS_PROCESS_EXECUTE)
     flags   = 0
 
@@ -164,11 +173,26 @@ class Process < Rex::Post::Process
       end
     end
 
-    request.add_tlv(TLV_TYPE_PROCESS_PATH, client.unicode_filter_decode( path ));
-
+    # Add arguments
     # If process arguments were supplied
-    if (arguments != nil)
-      request.add_tlv(TLV_TYPE_PROCESS_ARGUMENTS, arguments);
+    if arguments.kind_of?(Array)
+      request.add_tlv(TLV_TYPE_PROCESS_UNESCAPED_PATH, client.unicode_filter_decode( path ))
+      # This flag is needed to disambiguate how to handle escaping special characters in the path when no arguments are provided
+      flags |= PROCESS_EXECUTE_FLAG_ARG_ARRAY
+      arguments.each do |arg|
+        request.add_tlv(TLV_TYPE_PROCESS_ARGUMENT, arg);
+      end
+      if opts[:legacy_path]
+        request.add_tlv(TLV_TYPE_PROCESS_PATH, opts[:legacy_path])
+      end
+      if opts[:legacy_args]
+        request.add_tlv(TLV_TYPE_PROCESS_ARGUMENTS, opts[:legacy_args])
+      end
+    elsif arguments.nil? || arguments.kind_of?(String)
+      request.add_tlv(TLV_TYPE_PROCESS_PATH, client.unicode_filter_decode( path ))
+      request.add_tlv(TLV_TYPE_PROCESS_ARGUMENTS, arguments)
+    else
+      raise ArgumentError.new('Unknown type for arguments')
     end
 
     request.add_tlv(TLV_TYPE_PROCESS_FLAGS, flags);
@@ -194,7 +218,7 @@ class Process < Rex::Post::Process
   #
   # Execute an application and capture the output
   #
-  def Process.capture_output(path, arguments = nil, opts = nil, time_out = 15)
+  def Process.capture_output(path, arguments = '', opts = nil, time_out = 15)
     start = Time.now.to_i
     process = execute(path, arguments, opts)
     data = ""
@@ -301,6 +325,20 @@ class Process < Rex::Post::Process
     self.get_processes
   end
 
+  #
+  # Search memory for supplied regexes and return matches
+  #
+  def Process.memory_search(pid: 0, needles: [''], min_match_length: 5, max_match_length: 127)
+    request = Packet.create_request(COMMAND_ID_STDAPI_SYS_PROCESS_MEMORY_SEARCH)
+
+    request.add_tlv(TLV_TYPE_PID, pid)
+    needles.each { |needle| request.add_tlv(TLV_TYPE_MEMORY_SEARCH_NEEDLE, needle) }
+    request.add_tlv(TLV_TYPE_MEMORY_SEARCH_MATCH_LEN, max_match_length)
+    request.add_tlv(TLV_TYPE_UINT, min_match_length)
+
+    self.client.send_request(request)
+  end
+
   ##
   #
   # Instance methods
@@ -388,7 +426,7 @@ class Process < Rex::Post::Process
 
   #
   # Block until this process terminates on the remote side.
-  # By default we choose not to allow a packet responce timeout to
+  # By default we choose not to allow a packet response timeout to
   # occur as we may be waiting indefinatly for the process to terminate.
   #
   def wait( timeout = -1 )

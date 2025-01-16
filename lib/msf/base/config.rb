@@ -74,7 +74,8 @@ class Config < Hash
       'PluginDirectory'     => "plugins",
       'DataDirectory'       => "data",
       'LootDirectory'       => "loot",
-      'LocalDirectory'      => "local"
+      'LocalDirectory'      => "local",
+      'HistoriesDirectory'  => "histories"
     }
 
   ##
@@ -95,6 +96,13 @@ class Config < Hash
   # @return [String] the root configuration directory.
   def self.config_directory
     self.new.config_directory
+  end
+
+  # Returns the histories directory default.
+  #
+  # @return [String] the SQL session histories directory.
+  def self.histories_directory
+    self.new.histories_directory
   end
 
   # Return the directory that logo files should be loaded from.
@@ -202,13 +210,37 @@ class Config < Hash
 
   # Returns the full path to the history file.
   #
-  # @return [String] path the history file.
+  # @return [String] path to the history file.
   def self.history_file
     self.new.history_file
   end
 
+  # Returns the full path to the meterpreter history file.
+  #
+  # @return [String] path to the history file.
   def self.meterpreter_history
     self.new.meterpreter_history
+  end
+
+  # Returns the full path to the smb session history file.
+  #
+  # @return [String] path to the history file.
+  def self.smb_session_history
+    self.new.smb_session_history
+  end
+
+  # Returns the full path to the ldap session history file.
+  #
+  # @return [String] path to the history file.
+  def self.ldap_session_history
+    self.new.ldap_session_history
+  end
+
+  # Returns the full path to the MySQL interactive query history file
+  #
+  # @return [String] path to the interactive query history file.
+  def self.history_file_for_session_type(opts)
+    self.new.history_file_for_session_type(opts)
   end
 
   def self.pry_history
@@ -216,14 +248,14 @@ class Config < Hash
   end
   # Returns the full path to the fav_modules file.
   #
-  # @return [String] path the fav_modules file.
+  # @return [String] path to the fav_modules file.
   def self.fav_modules_file
     self.new.fav_modules_file
   end
 
   # Returns the full path to the handler file.
   #
-  # @return [String] path the handler file.
+  # @return [String] path to the handler file.
   def self.persist_file
     self.new.persist_file
   end
@@ -298,6 +330,13 @@ class Config < Hash
     self['ConfigDirectory']
   end
 
+  # Returns the histories directory default.
+  #
+  # @return [String] the SQL session histories directory.
+  def histories_directory
+    config_directory + FileSep + self['HistoriesDirectory']
+  end
+
   # Returns the full path to the configuration file.
   #
   # @return [String] path to the configuration file.
@@ -314,6 +353,34 @@ class Config < Hash
 
   def meterpreter_history
     config_directory + FileSep + "meterpreter_history"
+  end
+
+  def smb_session_history
+    config_directory + FileSep + "smb_session_history"
+  end
+
+  def ldap_session_history
+    config_directory + FileSep + "ldap_session_history"
+  end
+
+  def history_options_valid?(opts)
+    return false if (opts[:session_type].nil? || opts[:interactive].nil?)
+
+    true
+  end
+
+  def interactive_to_string_map(interactive)
+    # Check for true explicitly rather than just a value that is truthy.
+    interactive == true ? '_interactive' : ''
+  end
+
+  def history_file_for_session_type(opts)
+    return nil unless history_options_valid?(opts)
+
+    session_type_name = opts[:session_type]
+    interactive = interactive_to_string_map(opts[:interactive])
+
+    histories_directory + FileSep + "#{session_type_name}_session#{interactive}_history"
   end
 
   def pry_history
@@ -437,6 +504,7 @@ class Config < Hash
     FileUtils.mkdir_p(user_module_directory)
     FileUtils.mkdir_p(user_plugin_directory)
     FileUtils.mkdir_p(user_data_directory)
+    FileUtils.mkdir_p(histories_directory)
   end
 
   # Loads configuration from the supplied file path, or the default one if

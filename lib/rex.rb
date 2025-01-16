@@ -98,15 +98,22 @@ require 'rex/sslscan/result'
 require 'rex/version'
 
 # Overload the Kernel.sleep() function to be thread-safe
-Kernel.class_eval("
+Kernel.class_eval(<<-EOF, __FILE__, __LINE__ + 1)
   def sleep(seconds=nil)
     Rex::ThreadSafe.sleep(seconds)
   end
-")
+EOF
 
 # Overload the Kernel.select function to be thread-safe
-Kernel.class_eval("
+Kernel.class_eval(<<-EOF, __FILE__, __LINE__ + 1)
   def select(rfd = nil, wfd = nil, efd = nil, to = nil)
     Rex::ThreadSafe.select(rfd, wfd, efd, to)
   end
-")
+EOF
+
+# Add the deprecated File.exists? method to call non-deprecated File.exist?
+File.class_eval(<<-EOF, __FILE__, __LINE__ + 1)
+  def File.exists?(fname)
+    File.exist?(fname)
+  end
+EOF

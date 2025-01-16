@@ -30,7 +30,7 @@ class CommandShell
   include Rex::Ui::Text::Resource
 
   @@irb_opts = Rex::Parser::Arguments.new(
-    '-h' => [false, 'Help menu.'             ],
+    ['-h', '--help'] => [false, 'Help menu.'             ],
     '-e' => [true,  'Expression to evaluate.']
   )
 
@@ -203,6 +203,7 @@ Shell Banner:
     end
 
     print(tbl.to_s)
+    print("For more info on a specific command, use %grn<command> -h%clr or %grnhelp <command>%clr.\n\n")
   end
 
   def cmd_background_help
@@ -235,35 +236,35 @@ Shell Banner:
   end
 
   def cmd_sessions(*args)
-    if args.length.zero? || args[0].to_i <= 0
-      # No args
-      return cmd_sessions_help
-    end
-
-    if args.length == 1 && (args[1] == '-h' || args[1] == 'help')
-      # One arg, and args[1] => '-h' '-H' 'help'
-      return cmd_sessions_help
-    end
-
     if args.length != 1
-      # More than one argument
+      print_status "Wrong number of arguments expected: 1, received: #{args.length}"
       return cmd_sessions_help
     end
 
-    if args[0].to_s == self.name.to_s
+    if args[0] == '-h' || args[0] == '--help'
+      return cmd_sessions_help
+    end
+
+    session_id = args[0].to_i
+    if session_id <= 0
+      print_status 'Invalid session id'
+      return cmd_sessions_help
+    end
+
+    if session_id == self.sid
       # Src == Dst
       print_status("Session #{self.name} is already interactive.")
     else
       print_status("Backgrounding session #{self.name}...")
       # store the next session id so that it can be referenced as soon
       # as this session is no longer interacting
-      self.next_session = args[0]
+      self.next_session = session_id
       self.interacting = false
     end
   end
 
   def cmd_resource(*args)
-    if args.empty?
+    if args.empty? || args[0] == '-h' || args[0] == '--help'
       cmd_resource_help
       return false
     end
@@ -320,9 +321,9 @@ Shell Banner:
   end
 
   def cmd_shell(*args)
-    if args.length == 1 && (args[1] == '-h' || args[1] == 'help')
-      # One arg, and args[1] => '-h' '-H' 'help'
-      return cmd_sessions_help
+    if args.length == 1 && (args[0] == '-h' || args[0] == '--help')
+      # One arg, and args[0] => '-h' '--help'
+      return cmd_shell_help
     end
 
     if platform == 'windows'
@@ -346,7 +347,7 @@ Shell Banner:
       print_status("Using `script` to pop up an interactive shell")
       # Payload: script /dev/null
       # Using /dev/null to make sure there is no log file on the target machine
-      # Prevent being detected by the admin or antivirus softwares
+      # Prevent being detected by the admin or antivirus software
       shell_command("#{script_path} /dev/null")
       return
     end
@@ -570,7 +571,7 @@ Shell Banner:
   # Open the Pry debugger on the current session
   #
   def cmd_pry(*args)
-    if args.include?('-h')
+    if args.include?('-h') || args.include?('--help')
       cmd_pry_help
       return
     end
@@ -653,6 +654,7 @@ Shell Banner:
   def shell_read(length=-1, timeout=1)
     begin
       rv = rstream.get_once(length, timeout)
+      rlog(rv, self.log_source) if rv && self.log_source
       framework.events.on_session_output(self, rv) if rv
       return rv
     rescue ::Rex::SocketError, ::EOFError, ::IOError, ::Errno::EPIPE => e
@@ -671,6 +673,7 @@ Shell Banner:
     return unless buf
 
     begin
+      rlog(buf, self.log_source) if self.log_source
       framework.events.on_session_command(self, buf.strip)
       rstream.write(buf)
     rescue ::Rex::SocketError, ::EOFError, ::IOError, ::Errno::EPIPE => e
@@ -730,6 +733,49 @@ Shell Banner:
       print_status("Session ID #{sid} (#{tunnel_to_s}) processing AutoRunScript '#{datastore['AutoRunScript']}'")
       execute_script(args.shift, *args)
     end
+  end
+
+  # Perform command line escaping wherein most chars are able to be escaped by quoting them,
+  # but others don't have a valid way of existing inside quotes, so we need to "glue" together
+  # a series of sections of the original command line; some sections inside quotes, and some outside
+  # @param arg [String] The command line arg to escape
+  # @param quote_requiring [Array<String>] The chars that can successfully be escaped inside quotes
+  # @param unquotable_char [String] The character that can't exist inside quotes
+  # @param escaped_unquotable_char [String] The escaped form of unquotable_char
+  # @param quote_char [String] The char used for quoting
+  def self._glue_cmdline_escape(arg, quote_requiring, unquotable_char, escaped_unquotable_char, quote_char)
+    current_token = ""
+    result = ""
+    in_quotes = false
+
+    arg.each_char do |char|
+      if char == unquotable_char
+        if in_quotes
+          # This token has been in an inside-quote context, so let's properly wrap that before continuing
+          current_token = "#{quote_char}#{current_token}#{quote_char}"
+        end
+        result += current_token
+        result += escaped_unquotable_char # Escape the offending percent
+
+        # Start a new token - we'll assume we're remaining outside quotes
+        current_token = ''
+        in_quotes = false
+        next
+      elsif quote_requiring.include?(char)
+        # Oh, it turns out we should have been inside quotes for this token.
+        # Let's note that, for when we actually append the token
+        in_quotes = true
+      end
+      current_token += char
+    end
+
+    if in_quotes
+      # The final token has been in an inside-quote context, so let's properly wrap that before continuing
+      current_token = "#{quote_char}#{current_token}#{quote_char}"
+    end
+    result += current_token
+
+    result
   end
 
   attr_accessor :arch

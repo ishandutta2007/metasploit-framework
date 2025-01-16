@@ -32,12 +32,10 @@ class MetasploitModule < Msf::Auxiliary
     register_options(
       [
         Opt::Proxies,
-        OptInt.new('LoginTimeOut', [ true, "Timout on login", 23 ]),
+        OptInt.new('LoginTimeOut', [ true, "Timeout on login", 23 ]),
         OptBool.new('RECORD_GUEST', [ false, "Record guest login to the database", false]),
         OptBool.new('CHECK_GUEST', [ false, "Check for guest login", true])
       ], self)
-
-    deregister_options('PASSWORD_SPRAY')
   end
 
   def run_host(ip)
@@ -49,6 +47,7 @@ class MetasploitModule < Msf::Auxiliary
     )
 
     scanner = Metasploit::Framework::LoginScanner::AFP.new(
+      configure_login_scanner(
         host: ip,
         port: rport,
         proxies: datastore['PROXIES'],
@@ -66,6 +65,7 @@ class MetasploitModule < Msf::Auxiliary
         ssl_cipher: datastore['SSLCipher'],
         local_port: datastore['CPORT'],
         local_host: datastore['CHOST']
+      )
     )
 
     scanner.scan! do |result|

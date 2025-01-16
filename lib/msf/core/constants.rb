@@ -82,6 +82,8 @@ CONFIG_CHANGES    = 'config-changes'
 IOC_IN_LOGS       = 'ioc-in-logs'
 # Module may cause account lockouts (likely due to brute-forcing).
 ACCOUNT_LOCKOUTS  = 'account-lockouts'
+# Module may cause an existing valid session to be forced to log out (likely due to restrictions on concurrent sessions).
+ACCOUNT_LOGOUT    = 'account-logout'
 # Module may show something on the screen (Example: a window pops up).
 SCREEN_EFFECTS    = 'screen-effects'
 # Module may cause a noise (Examples: audio output from the speakers or hardware beeps).
@@ -99,6 +101,8 @@ FIRST_ATTEMPT_FAIL = 'first-attempt-fail'
 REPEATABLE_SESSION = 'repeatable-session'
 # The module isn't expected to get a shell reliably (such as only once).
 UNRELIABLE_SESSION = 'unreliable-session'
+# The module may not execute the payload until an external event occurs. For instance, a cron job, machine restart, user interaction within a GUI element, etc.
+EVENT_DEPENDENT = 'event-dependent'
 
 module HttpClients
   IE = "MSIE"

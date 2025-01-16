@@ -339,6 +339,10 @@ def reinit_db
   init_db
 end
 
+def print_webservice_removal_prompt
+  $stderr.puts "#{'[WARNING]'.red} The remote web service is being removed. Does this impact you? React here: https://github.com/rapid7/metasploit-framework/issues/18439"
+end
+
 class WebServicePIDStatus
   RUNNING = 0
   INACTIVE = 1
@@ -669,13 +673,6 @@ def persist_data_service
   puts 'Persisting http web data service credentials in msfconsole'
   # execute msfconsole commands to add and persist the data service connection
   cmd = "#{get_db_connect_command}; db_save; exit"
-  run_msfconsole_command(cmd)
-end
-
-def clear_default_data_service
-  puts 'Verifying msfconsole data service'
-  # execute msfconsole commands to clear the default data service connection
-  cmd = "db_disconnect --clear; exit"
   run_msfconsole_command(cmd)
 end
 
@@ -1056,12 +1053,11 @@ if $PROGRAM_NAME == __FILE__
     @options[:component] = prompt_for_component(command)
   end
   prompt_for_deletion(command)
-  # Disable the locally configured webservice component
-  if command != :status && @options[:component] == :database
-    clear_default_data_service
-  end
   if @options[:component] == :all
     @components.each { |component|
+      if component == :webservice
+        3.times { print_webservice_removal_prompt }
+      end
       puts '===================================================================='
       puts "Running the '#{command}' command for the #{component}:"
       invoke_command(commands, component.to_sym, command)
@@ -1070,6 +1066,9 @@ if $PROGRAM_NAME == __FILE__
     }
   else
     puts "Running the '#{command}' command for the #{@options[:component]}:"
+    if @options[:component] == :webservice
+      3.times { print_webservice_removal_prompt }
+    end
     invoke_command(commands, @options[:component], command)
   end
 end

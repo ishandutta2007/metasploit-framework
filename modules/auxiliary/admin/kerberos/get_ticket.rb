@@ -38,7 +38,8 @@ class MetasploitModule < Msf::Auxiliary
           [ 'GET_TGS', { 'Description' => 'Request a Ticket-Granting-Service (TGS)' } ],
           [ 'GET_HASH', { 'Description' => 'Request a TGS to recover the NTLM hash' } ]
         ],
-        'DefaultAction' => 'GET_TGT'
+        'DefaultAction' => 'GET_TGT',
+        'AKA' => ['PKINIT']
       )
     )
 
@@ -90,7 +91,7 @@ class MetasploitModule < Msf::Auxiliary
 
   def validate_options
     if datastore['CERT_FILE'].present?
-      certificate = File.read(datastore['CERT_FILE'])
+      certificate = File.binread(datastore['CERT_FILE'])
       begin
         @pfx = OpenSSL::PKCS12.new(certificate, datastore['CERT_PASSWORD'] || '')
       rescue OpenSSL::PKCS12::PKCS12Error => e

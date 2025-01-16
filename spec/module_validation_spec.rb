@@ -97,7 +97,7 @@ RSpec.describe ModuleValidation::Validator do
       end
 
       it 'has errors' do
-        expect(subject.errors.full_messages).to eq ['Side effects contains invalid values ["ARTIFACTS_ON_DISK"] - only ["artifacts-on-disk", "config-changes", "ioc-in-logs", "account-lockouts", "screen-effects", "audio-effects", "physical-effects"] is allowed']
+        expect(subject.errors.full_messages).to eq ['Side effects contains invalid values ["ARTIFACTS_ON_DISK"] - only ["artifacts-on-disk", "config-changes", "ioc-in-logs", "account-lockouts", "account-logout", "screen-effects", "audio-effects", "physical-effects"] is allowed']
       end
     end
 
@@ -107,7 +107,7 @@ RSpec.describe ModuleValidation::Validator do
       end
 
       it 'has errors' do
-        expect(subject.errors.full_messages).to eq ['Reliability contains invalid values ["FIRST_ATTEMPT_FAIL"] - only ["first-attempt-fail", "repeatable-session", "unreliable-session"] is allowed']
+        expect(subject.errors.full_messages).to eq ['Reliability contains invalid values ["FIRST_ATTEMPT_FAIL"] - only ["first-attempt-fail", "repeatable-session", "unreliable-session", "event-dependent"] is allowed']
       end
     end
 

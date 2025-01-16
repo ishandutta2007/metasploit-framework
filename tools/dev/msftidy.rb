@@ -55,6 +55,7 @@ class RuboCopRunner
   # @return [Integer] RuboCop::CLI status code
   def run(full_filepath, options = {})
     unless requires_rubocop?(full_filepath)
+      puts "#{full_filepath} - [*] Rubocop not required for older modules skipping. If making a large update - run rubocop #{"rubocop -a #{full_filepath}".yellow} and verify all issues are resolved"
       return RuboCop::CLI::STATUS_SUCCESS
     end
 
@@ -320,7 +321,7 @@ class MsftidyRunner
 
   # See if 'require "rubygems"' or equivalent is used, and
   # warn if so. Since Ruby 1.9 this has not been necessary and
-  # the framework only suports 1.9+
+  # the framework only supports 1.9+
   def check_rubygems
     @lines.each do |line|
       if line_has_require?(line, 'rubygems')

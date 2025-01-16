@@ -90,11 +90,15 @@ module Rex
             encrypt_basic(plaintext, ke) + hmac[0,self.class::MAC_SIZE]
           end
 
-          def gss_wrap(plaintext, key, sequence_number, is_initiator, use_acceptor_subkey: true)
+          def gss_wrap(plaintext, key, sequence_number, is_initiator, opts={})
             raise NotImplementedError
           end
 
-          def gss_unwrap(ciphertext, key, expected_sequence_number, is_initiator, use_acceptor_subkey: true)
+          def gss_unwrap(ciphertext, key, expected_sequence_number, is_initiator, opts={})
+            raise NotImplementedError
+          end
+
+          def calculate_encrypted_length(plaintext_len)
             raise NotImplementedError
           end
 
@@ -110,7 +114,7 @@ module Rex
             raise NotImplementedError
           end
 
-          # Functions may be overriden by subclasses:
+          # Functions may be overridden by subclasses:
           def random_to_key(seed)
             if seed.length != self.class::SEED_SIZE
               raise Rex::Proto::Kerberos::Model::Error::KerberosError, 'Invalid seed size'

