@@ -16248,14 +16248,17 @@
     "type": "auxiliary",
     "author": [
       "Richard Davy - secureyourit.co.uk",
-      "Lnk Creation Code by Mubix",
-      "asoto-r7"
+      "mubix <mubix@hak5.org>",
+      "asoto-r7",
+      "hyp3rlinx",
+      "bcoles <bcoles@gmail.com>"
     ],
-    "description": "This module dependent on the given filename extension creates either\n          a .lnk, .scf, .url, .xml, or desktop.ini file which includes a reference\n          to the specified remote host, causing SMB connections to be initiated\n          from any user that views the file.",
+    "description": "This module dependent on the given filename extension creates either\n          a .lnk, .scf, .url, .xml, .library-ms, or desktop.ini file which includes\n          a reference to the specified remote host, causing SMB connections to be\n          initiated from any user that views the file.",
     "references": [
       "URL-https://malicious.link/blog/2012/02/11/ms08_068-ms10_046-fun-until-2018",
       "URL-https://malicious.link/post/2012/2012-02-19-developing-the-lnk-metasploit-post-module-with-mona/",
-      "URL-https://bohops.com/2018/08/04/capturing-netntlm-hashes-with-office-dot-xml-documents/"
+      "URL-https://bohops.com/2018/08/04/capturing-netntlm-hashes-with-office-dot-xml-documents/",
+      "URL-https://web.archive.org/web/20190106181024/https://hyp3rlinx.altervista.org/advisories/MICROSOFT-WINDOWS-.LIBRARY-MS-FILETYPE-INFORMATION-DISCLOSURE.txt"
     ],
     "platform": "Windows",
     "arch": "",
@@ -16263,14 +16266,20 @@
     "autofilter_ports": [],
     "autofilter_services": [],
     "targets": null,
-    "mod_time": "2022-12-04 17:41:24 +0000",
+    "mod_time": "2025-05-02 01:28:52 +0000",
     "path": "/modules/auxiliary/fileformat/multidrop.rb",
     "is_install_path": true,
     "ref_name": "fileformat/multidrop",
     "check": false,
     "post_auth": false,
     "default_credential": false,
-    "notes": {},
+    "notes": {
+      "Stability": [
+        "crash-safe"
+      ],
+      "SideEffects": [],
+      "Reliability": []
+    },
     "session_types": false,
     "needs_cleanup": false,
     "actions": []
@@ -86646,6 +86655,56 @@
         "repeatable-session"
       ],
       "SideEffects": []
+    },
+    "session_types": false,
+    "needs_cleanup": null
+  },
+  "exploit_linux/ssh/ssh_erlangotp_rce": {
+    "name": "Erlang OTP Pre-Auth RCE Scanner and Exploit",
+    "fullname": "exploit/linux/ssh/ssh_erlangotp_rce",
+    "aliases": [],
+    "rank": 600,
+    "disclosure_date": "2025-04-16",
+    "type": "exploit",
+    "author": [
+      "Horizon3 Attack Team",
+      "Matt Keeley",
+      "Martin Kristiansen",
+      "mekhalleh (RAMELLA Sebastien)"
+    ],
+    "description": "This module detect and exploits CVE-2025-32433, a pre-authentication vulnerability in Erlang-based SSH\n          servers that allows remote command execution. By sending crafted SSH packets, it executes a payload to\n          establish a reverse shell on the target system.\n\n          The exploit leverages a flaw in the SSH protocol handling to execute commands via the Erlang `os:cmd`\n          function without requiring authentication.",
+    "references": [
+      "CVE-2025-32433",
+      "URL-https://x.com/Horizon3Attack/status/1912945580902334793",
+      "URL-https://platformsecurity.com/blog/CVE-2025-32433-poc",
+      "URL-https://github.com/ProDefense/CVE-2025-32433"
+    ],
+    "platform": "Linux,Unix",
+    "arch": "cmd",
+    "rport": 22,
+    "autofilter_ports": [],
+    "autofilter_services": [],
+    "targets": [
+      "Linux Command",
+      "Unix Command"
+    ],
+    "mod_time": "2025-05-02 13:41:47 +0000",
+    "path": "/modules/exploits/linux/ssh/ssh_erlangotp_rce.rb",
+    "is_install_path": true,
+    "ref_name": "linux/ssh/ssh_erlangotp_rce",
+    "check": true,
+    "post_auth": false,
+    "default_credential": false,
+    "notes": {
+      "Stability": [
+        "crash-safe"
+      ],
+      "Reliability": [
+        "repeatable-session"
+      ],
+      "SideEffects": [
+        "ioc-in-logs"
+      ]
     },
     "session_types": false,
     "needs_cleanup": null
