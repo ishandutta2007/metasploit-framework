@@ -53560,7 +53560,7 @@
     "autofilter_ports": [],
     "autofilter_services": [],
     "targets": null,
-    "mod_time": "2025-05-28 22:15:05 +0000",
+    "mod_time": "2025-09-02 10:05:42 +0000",
     "path": "/modules/auxiliary/scanner/sap/sap_router_portscanner.rb",
     "is_install_path": true,
     "ref_name": "scanner/sap/sap_router_portscanner",
@@ -89084,54 +89084,6 @@
     "needs_cleanup": null,
     "actions": []
   },
-  "exploit_linux/local/bash_profile_persistence": {
-    "name": "Bash Profile Persistence",
-    "fullname": "exploit/linux/local/bash_profile_persistence",
-    "aliases": [],
-    "rank": 300,
-    "disclosure_date": "1989-06-08",
-    "type": "exploit",
-    "author": [
-      "Michael Long <bluesentinel@protonmail.com>"
-    ],
-    "description": "This module writes an execution trigger to the target's Bash profile.\n          The execution trigger executes a call back payload whenever the target\n          user opens a Bash terminal. A handler is not run automatically, so you\n          must configure an appropriate exploit/multi/handler to receive the callback.",
-    "references": [
-      "URL-https://attack.mitre.org/techniques/T1156/"
-    ],
-    "platform": "Linux,Unix",
-    "arch": "cmd",
-    "rport": null,
-    "autofilter_ports": [],
-    "autofilter_services": [],
-    "targets": [
-      "Automatic"
-    ],
-    "mod_time": "2021-12-24 03:06:37 +0000",
-    "path": "/modules/exploits/linux/local/bash_profile_persistence.rb",
-    "is_install_path": true,
-    "ref_name": "linux/local/bash_profile_persistence",
-    "check": false,
-    "post_auth": false,
-    "default_credential": false,
-    "notes": {
-      "Reliability": [
-        "repeatable-session"
-      ],
-      "Stability": [
-        "crash-safe"
-      ],
-      "SideEffects": [
-        "artifacts-on-disk",
-        "config-changes"
-      ]
-    },
-    "session_types": [
-      "meterpreter",
-      "shell"
-    ],
-    "needs_cleanup": null,
-    "actions": []
-  },
   "exploit_linux/local/blueman_set_dhcp_handler_dbus_priv_esc": {
     "name": "blueman set_dhcp_handler D-Bus Privilege Escalation",
     "fullname": "exploit/linux/local/blueman_set_dhcp_handler_dbus_priv_esc",
@@ -95902,6 +95854,57 @@
     },
     "session_types": false,
     "needs_cleanup": null
+  },
+  "exploit_linux/persistence/bash_profile": {
+    "name": "Bash Profile Persistence",
+    "fullname": "exploit/linux/persistence/bash_profile",
+    "aliases": [
+      "exploits/linux/local/bash_profile_persistence"
+    ],
+    "rank": 600,
+    "disclosure_date": "1989-06-08",
+    "type": "exploit",
+    "author": [
+      "Michael Long <bluesentinel@protonmail.com>"
+    ],
+    "description": "This module writes an execution trigger to the target's Bash profile.\n          The execution trigger executes a call back payload whenever the target\n          user opens a Bash terminal.\n          Verified on Ubuntu 22.04 and 18.04 desktop with Gnome",
+    "references": [
+      "ATT&CK-T1546.004"
+    ],
+    "platform": "Linux,Unix",
+    "arch": "cmd, x86, x64, armle, aarch64, ppc, mipsle, mipsbe",
+    "rport": null,
+    "autofilter_ports": [],
+    "autofilter_services": [],
+    "targets": [
+      "Automatic"
+    ],
+    "mod_time": "2025-09-01 18:09:25 +0000",
+    "path": "/modules/exploits/linux/persistence/bash_profile.rb",
+    "is_install_path": true,
+    "ref_name": "linux/persistence/bash_profile",
+    "check": true,
+    "post_auth": false,
+    "default_credential": false,
+    "notes": {
+      "Reliability": [
+        "repeatable-session",
+        "event-dependent"
+      ],
+      "Stability": [
+        "crash-safe"
+      ],
+      "SideEffects": [
+        "artifacts-on-disk",
+        "config-changes"
+      ]
+    },
+    "session_types": [
+      "meterpreter",
+      "shell"
+    ],
+    "needs_cleanup": null,
+    "actions": []
   },
   "exploit_linux/pop3/cyrus_pop3d_popsubfolders": {
     "name": "Cyrus IMAPD pop3d popsubfolders USER Buffer Overflow",
